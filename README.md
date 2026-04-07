@@ -95,6 +95,7 @@ Why use our gallery?
 - [📊 Statistics](#-statistics)
 - [🔥 Featured Prompts](#-featured-prompts)
 - [📋 All Prompts](#-all-prompts)
+- [🎬 Historical Documentary Blueprint](#-historical-documentary-blueprint)
 - [🤝 How to Contribute](#-how-to-contribute)
 - [📄 License](#-license)
 - [🙏 Acknowledgements](#-acknowledgements)
@@ -7644,6 +7645,22 @@ The gallery features:
 📱 Mobile-optimized experience
 
 </div>
+
+---
+
+## 🎬 Historical Documentary Blueprint
+
+A complete production system for creating long-form (15–25 min) historical documentaries using Nano Banana Pro for image generation, AI video tools for animation, and n8n automation.
+
+| Resource | Description |
+|----------|-------------|
+| [Full Blueprint](docs/HISTORICAL_DOCUMENTARY_BLUEPRINT.md) | Complete production guide — structure, workflow, monetization, and scaling |
+| [Script Template](documentary/scripts/script_template.md) | Three-act documentary script template with timing markers and ad breaks |
+| [Image Prompts](documentary/templates/nano_banana_pro_prompts.md) | Nano Banana Pro prompt templates for characters, scenes, and overlays |
+| [Video Prompts](documentary/templates/video_animation_prompts.md) | Runway / Veo animation prompt templates with camera motion guides |
+| [n8n Workflow](documentary/templates/n8n_workflow_skeleton.json) | 4-module automation pipeline skeleton for n8n |
+
+**Quick stats**: ~$16–35 per episode production cost | 18–22 min optimal length | $10–15+ RPM in history niche
 
 ---
 

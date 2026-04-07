@@ -1,0 +1,14 @@
+# Ignore all generated binary assets (images, video clips, audio)
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.mp4
+*.mov
+*.mp3
+*.wav
+*.srt
+
+# Keep this .gitignore and the README
+!.gitignore
+!README.md

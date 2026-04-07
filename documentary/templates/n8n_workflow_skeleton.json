@@ -1,0 +1,332 @@
+{
+  "_meta": {
+    "description": "Historical Documentary Production Pipeline — n8n Workflow Skeleton",
+    "version": "1.0.0",
+    "modules": [
+      "Module 1: Idea & Script Generation",
+      "Module 2: Image & Video Generation",
+      "Module 3: Timeline Assembly & Upload",
+      "Module 4: Publishing & Analytics"
+    ],
+    "notes": "Import into n8n and configure credentials for each service. Each module runs independently with human approval gates between them."
+  },
+  "modules": {
+    "module_1_script_generation": {
+      "name": "Documentary Script Generation",
+      "trigger": "Schedule (daily) or Manual",
+      "nodes": [
+        {
+          "id": "trigger_schedule",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "parameters": {
+            "rule": {
+              "interval": [{ "field": "hours", "hoursInterval": 24 }]
+            }
+          },
+          "notes": "Runs daily; switch to manual trigger for on-demand use"
+        },
+        {
+          "id": "fetch_trending_topics",
+          "type": "n8n-nodes-base.httpRequest",
+          "parameters": {
+            "url": "https://serpapi.com/search.json",
+            "qs": {
+              "engine": "google_trends",
+              "q": "history documentary,ancient history,archaeology",
+              "api_key": "={{$credentials.serpApiKey}}"
+            }
+          },
+          "notes": "Replace with your preferred trending source (Google Trends, Reddit API, etc.)"
+        },
+        {
+          "id": "score_topics",
+          "type": "n8n-nodes-base.anthropic",
+          "parameters": {
+            "model": "claude-sonnet-4-6",
+            "prompt": "Score these history topics for YouTube documentary potential (1-10) based on: search volume, visual appeal, narrative depth, and existing competition. Return top 3 with scores and reasoning.\n\nTopics:\n{{$json.trending_topics}}"
+          },
+          "notes": "Uses Claude to evaluate and rank topic ideas"
+        },
+        {
+          "id": "generate_script",
+          "type": "n8n-nodes-base.anthropic",
+          "parameters": {
+            "model": "claude-sonnet-4-6",
+            "prompt": "Create a 3-act narrative script for a 20-minute historical documentary on: {{$json.top_topic}}\n\n- Act I: Hook (100 words), Setup (150 words)\n- Act II: Rising Action with 4 retention hooks every 2-3 minutes (600 words)\n- Act III: Climax & Legacy (200 words)\n- Include 8-10 specific scenes with visual descriptions for AI image generation\n- Add dry humor in narrator commentary\n- Mark mid-roll ad breaks at natural chapter ends (around 8:00, 14:00, 18:00)\n- For each scene, describe: setting, characters present, action, lighting/mood\n\nOutput as structured markdown matching the script template."
+          },
+          "notes": "Generates full documentary script with scene breakdowns"
+        },
+        {
+          "id": "save_to_sheet",
+          "type": "n8n-nodes-base.googleSheets",
+          "parameters": {
+            "operation": "append",
+            "sheetId": "YOUR_SHEET_ID",
+            "range": "Documentary Ideas Queue",
+            "columns": {
+              "topic": "={{$json.topic}}",
+              "score": "={{$json.score}}",
+              "script": "={{$json.script}}",
+              "status": "awaiting_approval",
+              "created_at": "={{$now}}"
+            }
+          },
+          "notes": "Logs script to Google Sheet for human review"
+        }
+      ],
+      "human_gate": "Review and approve script in Google Sheet before triggering Module 2"
+    },
+    "module_2_asset_generation": {
+      "name": "Image & Video Asset Generation",
+      "trigger": "Manual (after script approval)",
+      "nodes": [
+        {
+          "id": "trigger_manual",
+          "type": "n8n-nodes-base.manualTrigger",
+          "parameters": {},
+          "notes": "Triggered after human approves script"
+        },
+        {
+          "id": "parse_scenes",
+          "type": "n8n-nodes-base.anthropic",
+          "parameters": {
+            "model": "claude-sonnet-4-6",
+            "prompt": "Parse this documentary script into a structured JSON array of scenes. For each scene return:\n- scene_id (e.g., 'scene_trojan_walls_01')\n- scene_name\n- character_ids (array of characters present)\n- image_prompts (array of 3-4 Nano Banana Pro prompts, photorealistic/cinematic style, 4K)\n- video_prompts (array of camera motion prompts for Runway/Veo)\n- duration_seconds\n- act (1, 2, or 3)\n\nScript:\n{{$json.approved_script}}"
+          },
+          "notes": "AI extracts structured scene data from approved script"
+        },
+        {
+          "id": "generate_character_sheets",
+          "type": "n8n-nodes-base.httpRequest",
+          "parameters": {
+            "url": "https://generativelanguage.googleapis.com/v1/models/gemini-pro-vision:generateContent",
+            "method": "POST",
+            "headers": {
+              "Authorization": "Bearer ={{$credentials.googleAiApiKey}}"
+            },
+            "body": {
+              "prompt": "={{$json.character_prompt}}",
+              "generationConfig": {
+                "imageResolution": "1920x1080",
+                "quality": "maximum",
+                "style": "photorealistic"
+              }
+            }
+          },
+          "notes": "Calls Nano Banana Pro API for character reference sheets. Loop over each character."
+        },
+        {
+          "id": "generate_scene_images",
+          "type": "n8n-nodes-base.httpRequest",
+          "parameters": {
+            "url": "https://generativelanguage.googleapis.com/v1/models/gemini-pro-vision:generateContent",
+            "method": "POST",
+            "body": {
+              "prompt": "={{$json.image_prompt}}",
+              "generationConfig": {
+                "imageResolution": "1920x1080",
+                "quality": "maximum",
+                "style": "cinematic"
+              }
+            }
+          },
+          "notes": "Loop: generates 3-4 images per scene via Nano Banana Pro"
+        },
+        {
+          "id": "save_images",
+          "type": "n8n-nodes-base.googleDrive",
+          "parameters": {
+            "operation": "upload",
+            "folder": "Documentary Assets/{{$json.episode_name}}/images/",
+            "fileName": "={{$json.scene_id}}_{{$json.image_index}}.png"
+          },
+          "notes": "Saves generated images to organized Google Drive folder"
+        },
+        {
+          "id": "generate_video_clips",
+          "type": "n8n-nodes-base.httpRequest",
+          "parameters": {
+            "url": "https://api.runwayml.com/v1/image-to-video",
+            "method": "POST",
+            "headers": {
+              "Authorization": "Bearer ={{$credentials.runwayApiKey}}"
+            },
+            "body": {
+              "image": "={{$json.source_image_url}}",
+              "prompt": "={{$json.video_prompt}}",
+              "duration": 4
+            }
+          },
+          "notes": "Converts each image to 4-sec video clip. Use Veo for characters, Runway for battles."
+        },
+        {
+          "id": "save_video_clips",
+          "type": "n8n-nodes-base.googleDrive",
+          "parameters": {
+            "operation": "upload",
+            "folder": "Documentary Assets/{{$json.episode_name}}/clips/",
+            "fileName": "={{$json.scene_id}}_take{{$json.take_number}}.mp4"
+          },
+          "notes": "Saves video clips to organized folder"
+        },
+        {
+          "id": "log_costs",
+          "type": "n8n-nodes-base.googleSheets",
+          "parameters": {
+            "operation": "append",
+            "sheetId": "YOUR_SHEET_ID",
+            "range": "Asset Generation Log",
+            "columns": {
+              "episode": "={{$json.episode_name}}",
+              "images_generated": "={{$json.image_count}}",
+              "clips_generated": "={{$json.clip_count}}",
+              "image_cost": "={{$json.image_cost_total}}",
+              "video_cost": "={{$json.video_cost_total}}",
+              "total_cost": "={{$json.total_cost}}"
+            }
+          },
+          "notes": "Tracks generation costs per episode"
+        }
+      ],
+      "human_gate": "Review all images and video clips before triggering Module 3"
+    },
+    "module_3_assembly": {
+      "name": "Timeline Assembly & Draft Upload",
+      "trigger": "Manual (after asset review)",
+      "nodes": [
+        {
+          "id": "trigger_manual",
+          "type": "n8n-nodes-base.manualTrigger",
+          "parameters": {},
+          "notes": "Triggered after human approves all assets"
+        },
+        {
+          "id": "build_ffmpeg_project",
+          "type": "n8n-nodes-base.anthropic",
+          "parameters": {
+            "model": "claude-sonnet-4-6",
+            "prompt": "Generate an FFmpeg concat/filter_complex command to assemble these video clips into a documentary timeline.\n\nScene list with clip paths and durations:\n{{$json.scene_manifest}}\n\nRequirements:\n- Arrange clips in act order (Act I, II, III)\n- Hard cuts between clips (no dissolves)\n- Add 0.5s fade-to-black at chapter breaks\n- Leave audio track open for narration overlay\n- Output as 1920x1080 MP4, H.264, high quality\n- Include chapter markers in metadata"
+          },
+          "notes": "AI generates the FFmpeg assembly command from scene manifest"
+        },
+        {
+          "id": "run_ffmpeg",
+          "type": "n8n-nodes-base.executeCommand",
+          "parameters": {
+            "command": "={{$json.ffmpeg_command}}"
+          },
+          "notes": "Runs FFmpeg locally or on cloud VM to assemble rough cut"
+        },
+        {
+          "id": "generate_captions",
+          "type": "n8n-nodes-base.httpRequest",
+          "parameters": {
+            "url": "https://api.openai.com/v1/audio/transcriptions",
+            "method": "POST",
+            "notes": "Run Whisper on narration audio to generate closed captions (.srt)"
+          },
+          "notes": "Generates subtitles from narration track via Whisper API"
+        },
+        {
+          "id": "upload_draft",
+          "type": "n8n-nodes-base.youTube",
+          "parameters": {
+            "operation": "upload",
+            "title": "DRAFT - {{$json.episode_title}}",
+            "description": "Draft for review — do not publish",
+            "privacyStatus": "unlisted",
+            "file": "={{$json.output_video_path}}"
+          },
+          "notes": "Uploads assembled video to YouTube as unlisted draft"
+        },
+        {
+          "id": "notify_review",
+          "type": "n8n-nodes-base.googleSheets",
+          "parameters": {
+            "operation": "update",
+            "columns": {
+              "status": "draft_ready_for_review",
+              "draft_url": "={{$json.youtube_url}}",
+              "assembly_date": "={{$now}}"
+            }
+          },
+          "notes": "Updates tracking sheet with draft URL for human review"
+        }
+      ],
+      "human_gate": "Watch unlisted draft, approve or request revisions before publishing"
+    },
+    "module_4_publishing": {
+      "name": "Publishing & Analytics Tracking",
+      "trigger": "Manual (after final review approval)",
+      "nodes": [
+        {
+          "id": "trigger_manual",
+          "type": "n8n-nodes-base.manualTrigger",
+          "parameters": {},
+          "notes": "Triggered after human approves final cut"
+        },
+        {
+          "id": "generate_metadata",
+          "type": "n8n-nodes-base.anthropic",
+          "parameters": {
+            "model": "claude-sonnet-4-6",
+            "prompt": "Generate YouTube metadata for this historical documentary episode:\n\nTitle: {{$json.episode_title}}\nTopic: {{$json.topic}}\nScript summary: {{$json.script_summary}}\n\nReturn:\n1. SEO-optimized title (under 60 chars, includes topic keyword)\n2. Description (200-300 words with timestamps, keywords, links)\n3. Tags (15-20 relevant tags)\n4. 3 thumbnail text options (short, punchy, under 6 words each)"
+          },
+          "notes": "AI generates optimized title, description, and tags"
+        },
+        {
+          "id": "publish_video",
+          "type": "n8n-nodes-base.youTube",
+          "parameters": {
+            "operation": "update",
+            "videoId": "={{$json.draft_video_id}}",
+            "title": "={{$json.optimized_title}}",
+            "description": "={{$json.description}}",
+            "tags": "={{$json.tags}}",
+            "privacyStatus": "public",
+            "publishAt": "={{$json.scheduled_publish_time}}"
+          },
+          "notes": "Moves video from unlisted to public (or schedules for optimal time: 2-3 PM ET)"
+        },
+        {
+          "id": "post_social",
+          "type": "n8n-nodes-base.httpRequest",
+          "parameters": {
+            "notes": "POST to Twitter/X API and Reddit API with teaser thumbnail and link"
+          },
+          "notes": "Cross-posts to social media (configure per platform)"
+        },
+        {
+          "id": "track_analytics",
+          "type": "n8n-nodes-base.googleSheets",
+          "parameters": {
+            "operation": "update",
+            "columns": {
+              "status": "published",
+              "publish_date": "={{$now}}",
+              "video_url": "={{$json.public_url}}",
+              "initial_views": 0,
+              "production_cost": "={{$json.total_cost}}"
+            }
+          },
+          "notes": "Logs publish event for later performance tracking"
+        },
+        {
+          "id": "schedule_analytics_check",
+          "type": "n8n-nodes-base.scheduleTrigger",
+          "parameters": {
+            "rule": {
+              "interval": [
+                { "field": "hours", "hoursInterval": 24 },
+                { "field": "days", "daysInterval": 7 },
+                { "field": "days", "daysInterval": 30 }
+              ]
+            }
+          },
+          "notes": "Checks YouTube Analytics API at 24hr, 7-day, 30-day marks and logs to sheet"
+        }
+      ],
+      "human_gate": "None after publish — automated tracking only"
+    }
+  }
+}
